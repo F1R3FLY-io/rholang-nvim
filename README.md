@@ -120,6 +120,12 @@ Alternatively, use the build script:
 
 ### Tree-sitter Parser Setup
 
+**Important**: The build scripts automatically set `RHOLANG_NAMED_COMMENTS=1` when generating the parser. This ensures that `line_comment` and `block_comment` nodes are included as named nodes in the parse tree, which is required for LSP features that work with comments. If you manually run `tree-sitter generate`, you must set this environment variable:
+
+```bash
+RHOLANG_NAMED_COMMENTS=1 tree-sitter generate grammar.js
+```
+
 Ensure `nvim-treesitter` is installed and configured:
 
 ```lua
@@ -199,8 +205,14 @@ Build and test locally:
 
 ```bash
 cd ~/path/to/rholang-nvim
-./build.sh
+./build.sh  # Automatically sets RHOLANG_NAMED_COMMENTS=1
 nvim -u NONE -c 'TSInstall rholang' -c 'q'
+```
+
+**Note**: The `build.sh` and `Makefile` automatically set `RHOLANG_NAMED_COMMENTS=1` to enable named comment nodes. If you're building manually with `tree-sitter generate`, ensure you set this variable:
+
+```bash
+RHOLANG_NAMED_COMMENTS=1 tree-sitter generate grammar.js
 ```
 
 ## Usage

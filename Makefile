@@ -72,7 +72,7 @@ all: generate $(LIBNAME)
 
 # Generate parser code from grammar.js
 generate:
-	@tree-sitter generate grammar.js
+	@RHOLANG_NAMED_COMMENTS=1 tree-sitter generate grammar.js
 
 # Compile object files
 %.o: %.c

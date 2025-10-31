@@ -38,6 +38,9 @@ if [ ! -f "tree-sitter.json" ]; then
     echo '{"abi_version": 15, "name": "rholang"}' > tree-sitter.json
 fi
 
+# Export environment variable for named comments in tree-sitter grammar
+export RHOLANG_NAMED_COMMENTS=1
+
 # Run make to build and install
 make && make install
 
