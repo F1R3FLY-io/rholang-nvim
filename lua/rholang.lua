@@ -8,6 +8,7 @@ local default_config = {
     log_level = 'debug', -- Options: error, warn, info, debug, trace
     language_server_path = 'rholang-language-server', -- Path to the language server executable
     validator_backend = 'rust', -- Validator backend: 'rust' (default, embedded parser/interpreter) or 'grpc:host:port' (e.g., 'grpc:localhost:40402' for RNode)
+    semantic_tokens = true, -- Enable LSP semantic highlighting (more accurate than tree-sitter alone)
   },
   treesitter = {
     enable = true,
@@ -396,6 +397,15 @@ function M.setup(user_config)
         })
         if client_id then
           vim.notify('LSP client for rholang-language-server started with ID: ' .. client_id, vim.log.levels.DEBUG)
+
+          -- Enable semantic tokens for enhanced syntax highlighting
+          if config.lsp.semantic_tokens then
+            local client = vim.lsp.get_client_by_id(client_id)
+            if client and client.server_capabilities.semanticTokensProvider then
+              vim.lsp.semantic_tokens.start(0, client_id)
+              vim.notify('LSP semantic highlighting enabled', vim.log.levels.DEBUG)
+            end
+          end
 
           -- Standard LSP keybindings
           -- Navigation

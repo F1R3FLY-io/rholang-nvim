@@ -1,4 +1,3 @@
-; queries/rholang/highlights.scm
 ; Comments
 (line_comment) @comment
 (block_comment) @comment
@@ -22,25 +21,22 @@
   (bundle_read)
   (bundle_equiv)
   (bundle_read_write)
-] @keyword
+] @keyword.modifier
 
-; Literals
-(bool_literal) @boolean
-(long_literal) @number
-(string_literal) @string
-(uri_literal) @string
-(nil) @constant.builtin
-(simple_type) @type
+; Word-based operators (logical/keyword-like)
+[
+  "or"
+  "and"
+  "matches"
+  "not"
+] @keyword.operator
 
-; Operators
+; Symbolic operators
 [
   "|"
   "!?"
   (send_single)
   (send_multiple)
-  "or"
-  "and"
-  "matches"
   "=="
   "!="
   "<"
@@ -55,18 +51,36 @@
   "/"
   "%"
   "%%"
-  "not"
   "~"
   "\\/"
   "/\\"
   "<-"
   "<<-"
+  "<="
   "?!"
   "=>"
   ":"
+  "="
+  "&"
 ] @operator
 
-; Punctuation
+; Literals
+(bool_literal) @boolean
+(long_literal) @number
+(string_literal) @string
+(uri_literal) @string.special
+(nil) @constant.builtin
+(unit) @constant.builtin
+
+; Types
+(simple_type) @type.builtin
+
+; Additional operators in context
+(quote "@" @operator)
+(eval "*" @operator)
+(var_ref_kind) @operator
+
+; Punctuation (split for brackets and delimiters)
 [
   "("
   ")"
@@ -74,33 +88,81 @@
   "}"
   "["
   "]"
+] @punctuation.bracket
+
+[
   ","
   ";"
   "."
+  "..."
 ] @punctuation.delimiter
+
+; Pathmap specific delimiters
+(pathmap "{|" @punctuation.bracket)
+(pathmap "|}" @punctuation.bracket)
+
+; Collections keyword
+(set "Set" @type.builtin)
 
 ; Variables and Names
 (var) @variable
-; (name) @variable ; Removed due to inlined rule
-(wildcard) @variable ; Added for _proc_var
-(var_ref) @variable
+(wildcard) @variable.builtin
+(var_ref var: (var) @variable)
 
-; Channels and Quotes
-(quote) @function
-(eval) @function
+; Contract and function names
+(contract name: (quote) @function)
+(contract name: (var) @function)
+(contract name: (wildcard) @function)
 
-; Collections
-(list) @constructor
-(tuple) @constructor
-(set) @constructor
-(map) @constructor
-(key_value_pair key: (_) @variable value: (_) @variable)
+; Method names
+(method name: (var) @function.method)
+(method receiver: (_) @variable)
 
-; Methods
-(method name: (_) @method)
+; Name declarations
+(name_decl (var) @variable)
+(name_decl uri: (uri_literal) @string.special)
 
-; Case patterns
+; Receipts and bindings
+(linear_bind names: (names) @variable)
+(repeated_bind names: (names) @variable)
+(peek_bind names: (names) @variable)
+
+; Let declarations
+(decl names: (names) @variable)
+
+; Case and branch patterns
 (case pattern: (_) @variable)
+(branch pattern: (_) @variable)
 
-; Function-like constructs
-(contract name: (_) @function)
+; Key-value pairs in maps
+(key_value_pair key: (_) @property)
+(key_value_pair value: (_))
+
+; Channels (quotes and evals)
+(quote) @function.call
+(eval (_) @variable)
+
+; Send and receive
+(send channel: (_) @function.call)
+(send_sync channel: (_) @function.call)
+(input receipts: (receipts))
+
+; Source channels in bindings
+(linear_bind input: (_) @function.call)
+(repeated_bind input: (_) @function.call)
+(peek_bind input: (_) @function.call)
+
+; Field labels for better semantic understanding
+(ifElse condition: (_))
+(ifElse consequence: (_))
+(ifElse alternative: (_))
+
+(match expression: (_))
+
+(new decls: (name_decls))
+(new proc: (_))
+
+(let decls: (_))
+(let proc: (_))
+
+(bundle proc: (_))

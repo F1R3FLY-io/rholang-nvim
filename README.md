@@ -6,6 +6,7 @@ This Neovim plugin provides comprehensive language support for [Rholang](https:/
 
 - **Tree-sitter Syntax Highlighting**: Highlights Rholang keywords (`contract`, `new`, `for`, etc.), strings, URIs, numbers, operators, variables, and comments.
 - **LSP Integration**: Provides autocompletion, diagnostics, go-to-definition, hover, rename, and more via `rholang-language-server` v0.1.0 (4-8x performance improvement over previous versions).
+- **LSP Semantic Highlighting**: Enhanced syntax highlighting using semantic tokens from the language server for more accurate, context-aware coloring (supports embedded MeTTa language).
 - **Automatic Indentation**: Smart indentation for blocks (`{}`), lists (`[]`), tuples (`()`), and other constructs, with custom `<CR>`, `o`, and `O` keymaps.
 - **Delimiter Handling**: Auto-closes `{`, `(`, `[`, and `"` with matching pairs, skips closing delimiters, and deletes empty pairs or strings (`""`) using `<BS>`, `<DEL>`, `x`, or `X`.
 - **Folding**: Tree-sitter-based folding for `contract`, `block`, `input`, `match`, `choice`, `new`, `par`, and `method` nodes.
@@ -325,6 +326,7 @@ Configure the plugin via `require('rholang').setup(config)`. Default settings:
     log_level = 'debug', -- Options: error, warn, info, debug, trace
     language_server_path = 'rholang-language-server',
     validator_backend = 'rust', -- Validator backend: 'rust' or 'grpc:host:port'
+    semantic_tokens = true, -- Enable LSP semantic highlighting (default: true)
   },
   treesitter = {
     enable = true,
@@ -352,6 +354,30 @@ The language server supports multiple validator backends for obtaining diagnosti
    - Example: `'grpc:localhost:40402'`
 
 **Note**: The `validator_backend` option is passed directly to the language server via the `--validator-backend` flag.
+
+### LSP Semantic Highlighting
+
+Semantic tokens provide context-aware syntax highlighting by leveraging the language server's deep understanding of your code. Unlike tree-sitter which uses pattern matching, semantic highlighting understands the semantic meaning of tokens.
+
+**Benefits:**
+- **More accurate**: Distinguishes between different uses of the same syntax (e.g., a variable vs. a function)
+- **Context-aware**: Knows the type and role of each identifier
+- **MeTTa support**: Properly highlights embedded MeTTa language within Rholang strings
+- **Semantic categories**: Provides granular token types (parameter, property, method, etc.)
+
+**Configuration:**
+
+Enabled by default. To disable:
+
+```lua
+require('rholang').setup({
+  lsp = {
+    semantic_tokens = false,
+  },
+})
+```
+
+**Note**: Semantic highlighting works alongside tree-sitter highlighting. Tree-sitter provides fast, initial highlighting while semantic tokens add semantic accuracy once the language server has analyzed the file.
 
 ### Migration from v0.3.0
 
@@ -488,6 +514,7 @@ Checking Tree-sitter configuration
 
 Checking LSP configuration
 - INFO Validator backend: rust
+- INFO LSP semantic tokens: enabled
 - OK rholang-language-server is installed and executable
 - OK rholang-language-server is running (client ID: 1)
 
@@ -500,6 +527,7 @@ When using RNode via gRPC, the LSP configuration section will show:
 ```text
 Checking LSP configuration
 - INFO Validator backend: grpc:localhost:40402
+- INFO LSP semantic tokens: enabled
 - OK rholang-language-server is installed and executable
 - OK rholang-language-server is running (client ID: 1)
 ```

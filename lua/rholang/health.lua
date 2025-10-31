@@ -16,6 +16,7 @@ local function get_config()
       log_level = 'debug',
       language_server_path = 'rholang-language-server',
       validator_backend = 'rust',
+      semantic_tokens = true,
     },
     treesitter = { enable = true, highlight = true, indent = true, fold = true },
   }
@@ -117,6 +118,13 @@ local function check_lsp_server()
 
   -- Report validator backend configuration
   health.info('Validator backend: ' .. config.lsp.validator_backend)
+
+  -- Report semantic tokens configuration
+  if config.lsp.semantic_tokens then
+    health.info('LSP semantic tokens: enabled')
+  else
+    health.info('LSP semantic tokens: disabled')
+  end
 
   local lsp_path = config.lsp.language_server_path
   check_executable(lsp_path, 'rholang-language-server')
