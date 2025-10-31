@@ -6,6 +6,7 @@
 
 # Include specific file patterns:
 !/build.sh
+!/CHANGELOG.md
 !/ftplugin/*.lua
 !/.gitignore
 !/grammar.js

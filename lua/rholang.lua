@@ -7,8 +7,7 @@ local default_config = {
     enable = true,
     log_level = 'debug', -- Options: error, warn, info, debug, trace
     language_server_path = 'rholang-language-server', -- Path to the language server executable
-    validator_backend = 'rust', -- Options: 'rust' for embedded interpreter, 'grpc' for legacy RNode server
-    grpc_address = 'localhost:40402', -- Address for gRPC backend (only used when validator_backend is 'grpc')
+    validator_backend = 'rust', -- Validator backend: 'rust' (default, embedded parser/interpreter) or 'grpc:host:port' (e.g., 'grpc:localhost:40402' for RNode)
   },
   treesitter = {
     enable = true,
@@ -365,6 +364,8 @@ function M.setup(user_config)
         local buf_dir = vim.fs.dirname(buf_path)
         local found = vim.fs.find({ '.git', 'rholang.toml' }, { path = buf_dir, upward = true })[1]
         local root_dir = found and vim.fs.dirname(found) or nil  -- Fallback to nil for single-file mode
+
+        -- Build LSP command based on configuration
         local lsp_cmd = {
           config.lsp.language_server_path,
           '--no-color',
@@ -372,17 +373,18 @@ function M.setup(user_config)
           '--log-level', config.lsp.log_level,
           '--client-process-id', tostring(vim.fn.getpid()),
         }
+
         -- Add validator backend configuration
+        table.insert(lsp_cmd, '--validator-backend')
+        table.insert(lsp_cmd, config.lsp.validator_backend)
+
+        -- Show informative message
         if config.lsp.validator_backend == 'rust' then
-          table.insert(lsp_cmd, '--validator-backend')
-          table.insert(lsp_cmd, 'rust')
-        elseif config.lsp.validator_backend == 'grpc' then
-          table.insert(lsp_cmd, '--validator-backend')
-          table.insert(lsp_cmd, 'grpc:' .. config.lsp.grpc_address)
+          vim.notify('Rholang LSP: Using embedded Rust parser/interpreter', vim.log.levels.INFO)
+        elseif config.lsp.validator_backend:match('^grpc:') then
+          vim.notify('Rholang LSP: Using RNode via ' .. config.lsp.validator_backend, vim.log.levels.INFO)
         else
-          vim.notify('Unknown validator backend "' .. config.lsp.validator_backend .. '", defaulting to rust', vim.log.levels.WARN)
-          table.insert(lsp_cmd, '--validator-backend')
-          table.insert(lsp_cmd, 'rust')
+          vim.notify('Rholang LSP: Using validator backend: ' .. config.lsp.validator_backend, vim.log.levels.INFO)
         end
         local client_id = vim.lsp.start({
           name = 'rholang',
@@ -393,97 +395,31 @@ function M.setup(user_config)
           end,
         })
         if client_id then
-          -- Custom LSP namespace for highlights (reuse if possible, but create for consistency)
-          local lsp_hl_ns = vim.api.nvim_create_namespace('lsp_custom_highlights')
-
-          -- Function to highlight and set loclist from references (contextual)
-          local function highlight_contextual_references()
-            -- Clear existing
-            vim.api.nvim_buf_clear_namespace(0, lsp_hl_ns, 0, -1)
-            vim.fn.setloclist(0, {})  -- Clear loclist
-
-            local params = vim.lsp.util.make_position_params()
-            params.context = { includeDeclaration = true }  -- Include the definition itself
-
-            vim.lsp.buf_request(0, 'textDocument/references', params, function(err, result, ctx)
-              if err or not result or #result == 0 then return end
-
-              local bufnr = ctx.bufnr
-              local current_uri = vim.uri_from_bufnr(bufnr)
-              local locations = {}
-
-              for _, loc in ipairs(result) do
-                if loc.uri == current_uri then
-                  local range = loc.range
-                  vim.api.nvim_buf_add_highlight(
-                    bufnr,
-                    lsp_hl_ns,
-                    'LspReferenceText',  -- Or LspReferenceRead/Write based on kind if server provides
-                    range.start.line,
-                    range.start.character,
-                    range['end'].character
-                  )
-                end
-                table.insert(locations, loc)
-              end
-
-              -- Set loclist with all references (cross-file)
-              local items = vim.lsp.util.locations_to_items(locations, vim.bo.fileencoding)
-              vim.fn.setloclist(0, items)
-            end)
-          end
-
-          -- Custom navigation functions (wrap around loclist if populated)
-          local function next_loc_or_search()
-            local locs = vim.fn.getloclist(0)
-            if #locs > 0 then
-              local ok, _ = pcall(vim.cmd, 'lnext')
-              if not ok then
-                vim.cmd('lfirst')  -- Wrap to first if at end
-              end
-            else
-              vim.cmd('normal! n')
-            end
-          end
-
-          local function prev_loc_or_search()
-            local locs = vim.fn.getloclist(0)
-            if #locs > 0 then
-              local ok, _ = pcall(vim.cmd, 'lprev')
-              if not ok then
-                vim.cmd('llast')  -- Wrap to last if at start
-              end
-            else
-              vim.cmd('normal! N')
-            end
-          end
-
-          -- Keymaps
-          vim.keymap.set('n', '*', highlight_contextual_references, { buffer = true, desc = 'LSP: Highlight Contextual References' })
-          vim.keymap.set('n', 'n', next_loc_or_search, { buffer = true, silent = true })
-          vim.keymap.set('n', 'N', prev_loc_or_search, { buffer = true, silent = true })
-
-          -- Clear on CursorMoved (like standard)
-          vim.api.nvim_create_autocmd('CursorMoved', {
-            buffer = 0,
-            callback = function()
-              vim.api.nvim_buf_clear_namespace(0, lsp_hl_ns, 0, -1)
-              vim.fn.setloclist(0, {})
-            end,
-          })
           vim.notify('LSP client for rholang-language-server started with ID: ' .. client_id, vim.log.levels.DEBUG)
-          -- LSP keymaps (add inside the 'FileType' callback)
+
+          -- Standard LSP keybindings
+          -- Navigation
           vim.keymap.set('n', 'gd', vim.lsp.buf.definition, { buffer = true, desc = 'LSP: Goto Definition' })
           vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, { buffer = true, desc = 'LSP: Goto Declaration' })
-          -- Optional: Add more, like references
-          vim.keymap.set('n', 'gr', vim.lsp.buf.references, { buffer = true, desc = 'LSP: References' })
-          vim.keymap.set('n', 'e', vim.lsp.buf.rename, { buffer = true, desc = 'LSP: Rename Symbol' })
+          vim.keymap.set('n', 'gr', vim.lsp.buf.references, { buffer = true, desc = 'LSP: Find References' })
+          -- vim.keymap.set('n', 'gi', vim.lsp.buf.implementation, { buffer = true, desc = 'LSP: Goto Implementation' })  -- Not supported
+          -- vim.keymap.set('n', 'gy', vim.lsp.buf.type_definition, { buffer = true, desc = 'LSP: Goto Type Definition' })  -- Not supported
 
-          -- Optional: Clear highlights on CursorMoved (default behavior, but explicit if needed)
-          vim.api.nvim_create_autocmd('CursorMoved', {
-            buffer = vim.api.nvim_get_current_buf(),
-            callback = vim.lsp.buf.clear_references,
-          })
+          -- Documentation and information
+          vim.keymap.set('n', 'K', vim.lsp.buf.hover, { buffer = true, desc = 'LSP: Hover Documentation' })
+          vim.keymap.set({ 'n', 'i' }, '<C-k>', vim.lsp.buf.signature_help, { buffer = true, desc = 'LSP: Signature Help' })
+
+          -- Editing
+          vim.keymap.set('n', '<leader>rn', vim.lsp.buf.rename, { buffer = true, desc = 'LSP: Rename Symbol' })
+          -- vim.keymap.set({ 'n', 'v' }, '<leader>ca', vim.lsp.buf.code_action, { buffer = true, desc = 'LSP: Code Actions' })  -- Not yet implemented
+
+          -- Symbols
+          vim.keymap.set('n', '<leader>ds', vim.lsp.buf.document_symbol, { buffer = true, desc = 'LSP: Document Symbols' })
+          vim.keymap.set('n', '<leader>ws', vim.lsp.buf.workspace_symbol, { buffer = true, desc = 'LSP: Workspace Symbols' })
+
+          -- Formatting (not yet implemented)
+          -- vim.keymap.set('n', '<leader>f', function() vim.lsp.buf.format({ async = true }) end, { buffer = true, desc = 'LSP: Format Document' })
+          -- vim.keymap.set('v', '<leader>f', function() vim.lsp.buf.format({ async = true }) end, { buffer = true, desc = 'LSP: Format Selection' })
         else
           vim.notify('Failed to start rholang-language-server', vim.log.levels.ERROR)
         end

@@ -5,7 +5,7 @@ This Neovim plugin provides comprehensive language support for [Rholang](https:/
 ## Features
 
 - **Tree-sitter Syntax Highlighting**: Highlights Rholang keywords (`contract`, `new`, `for`, etc.), strings, URIs, numbers, operators, variables, and comments.
-- **LSP Integration**: Provides autocompletion, diagnostics, go-to-definition, and more via `rholang-language-server`.
+- **LSP Integration**: Provides autocompletion, diagnostics, go-to-definition, hover, rename, and more via `rholang-language-server` v0.1.0 (4-8x performance improvement over previous versions).
 - **Automatic Indentation**: Smart indentation for blocks (`{}`), lists (`[]`), tuples (`()`), and other constructs, with custom `<CR>`, `o`, and `O` keymaps.
 - **Delimiter Handling**: Auto-closes `{`, `(`, `[`, and `"` with matching pairs, skips closing delimiters, and deletes empty pairs or strings (`""`) using `<BS>`, `<DEL>`, `x`, or `X`.
 - **Folding**: Tree-sitter-based folding for `contract`, `block`, `input`, `match`, `choice`, `new`, `par`, and `method` nodes.
@@ -75,6 +75,20 @@ Then, in your `init.lua`:
 
 ```lua
 require('rholang').setup()
+```
+
+#### pckr.nvim
+
+Add to your `pckr.nvim` configuration:
+
+```lua
+{
+  'F1R3FLY-io/rholang-nvim',
+  config = function()
+    require('rholang').setup()
+  end,
+  run = 'make && make install',
+}
 ```
 
 ### Manual Installation
@@ -211,7 +225,57 @@ new input, output in {
    - **Indentation**: Press `<CR>`, `o`, or `O` to indent new lines within blocks, lists, etc.
    - **Folding**: Use `:set foldmethod=expr foldexpr=v:lua.vim.treesitter.foldexpr()` and `zc`/`zo` to fold/unfold code blocks.
    - **Text Objects**: Select code blocks or strings with `:lua vim.treesitter.textobjects.select('@block.outer')`.
-   - **LSP**: Use autocompletion (`<C-x><C-o>`), diagnostics, and go-to-definition.
+   - **LSP**: See the [LSP Keybindings](#lsp-keybindings) section below.
+
+## LSP Keybindings
+
+The plugin configures standard LSP keybindings when `lsp.enable = true`. These keybindings are only active in Rholang buffers (`.rho` files):
+
+### Navigation
+
+| Keybinding | Command | Description | Status |
+|------------|---------|-------------|--------|
+| `gd` | `vim.lsp.buf.definition` | Go to definition | ✅ Supported |
+| `gD` | `vim.lsp.buf.declaration` | Go to declaration | ✅ Supported |
+| `gr` | `vim.lsp.buf.references` | Find all references | ✅ Supported |
+| `gi` | `vim.lsp.buf.implementation` | Go to implementation | ❌ Not supported |
+| `gy` | `vim.lsp.buf.type_definition` | Go to type definition | ❌ Not supported |
+
+### Documentation and Information
+
+| Keybinding | Command | Description | Status |
+|------------|---------|-------------|--------|
+| `K` | `vim.lsp.buf.hover` | Show hover documentation | ✅ Supported |
+| `<C-k>` | `vim.lsp.buf.signature_help` | Show signature help (insert & normal mode) | ✅ Supported |
+
+### Editing
+
+| Keybinding | Command | Description | Status |
+|------------|---------|-------------|--------|
+| `<leader>rn` | `vim.lsp.buf.rename` | Rename symbol (workspace-wide) | ✅ Supported |
+| `<leader>ca` | `vim.lsp.buf.code_action` | Show code actions | ❌ Not yet implemented |
+
+### Symbols
+
+| Keybinding | Command | Description | Status |
+|------------|---------|-------------|--------|
+| `<leader>ds` | `vim.lsp.buf.document_symbol` | Show document symbols (outline) | ✅ Supported |
+| `<leader>ws` | `vim.lsp.buf.workspace_symbol` | Search workspace symbols | ✅ Supported |
+
+### Formatting
+
+| Keybinding | Command | Description | Status |
+|------------|---------|-------------|--------|
+| `<leader>f` | `vim.lsp.buf.format` | Format document (normal & visual mode) | ❌ Not yet implemented |
+
+**Note**: Keybindings marked as "Not supported" or "Not yet implemented" are commented out in the plugin code and can be enabled when the language server implements these features.
+
+### Breaking Changes from v0.3.0
+
+If you're upgrading from v0.3.0, note the following keybinding changes:
+
+- **Rename**: Changed from `e` to `<leader>rn` (standard LSP convention)
+- **Reference highlighting**: Removed custom `*`, `n`, `N` keybindings for reference navigation (use standard LSP document highlighting instead)
 
 ## File Structure
 
@@ -248,6 +312,7 @@ Configure the plugin via `require('rholang').setup(config)`. Default settings:
     enable = true,
     log_level = 'debug', -- Options: error, warn, info, debug, trace
     language_server_path = 'rholang-language-server',
+    validator_backend = 'rust', -- Validator backend: 'rust' or 'grpc:host:port'
   },
   treesitter = {
     enable = true,
@@ -258,7 +323,69 @@ Configure the plugin via `require('rholang').setup(config)`. Default settings:
 }
 ```
 
-### Examples
+### Validator Backend
+
+The language server supports multiple validator backends for obtaining diagnostics:
+
+1. **Embedded Rust Parser/Interpreter** (default, `validator_backend = 'rust'`):
+   - Uses the embedded Rust implementation directly linked into the language server
+   - Faster startup, no external dependencies
+   - Suitable for most development workflows
+
+2. **Legacy RNode via gRPC** (`validator_backend = 'grpc:host:port'`):
+   - Communicates with legacy Scala RNode server via gRPC
+   - Stable, production-ready implementation
+   - Required for customers using legacy RNode
+   - Can run RNode in Docker or locally
+   - Example: `'grpc:localhost:40402'`
+
+**Note**: The `validator_backend` option is passed directly to the language server via the `--validator-backend` flag.
+
+### Migration from v0.3.0
+
+If you're upgrading from v0.3.0, the configuration has changed:
+
+**Old configuration (v0.3.0):**
+```lua
+{
+  lsp = {
+    use_rnode = true,
+    grpc_host = 'localhost',
+    grpc_port = 40402,
+  },
+}
+```
+
+**New configuration (v0.4.0):**
+```lua
+{
+  lsp = {
+    validator_backend = 'grpc:localhost:40402',
+  },
+}
+```
+
+### Configuration Examples
+
+- **Use RNode for diagnostics** (legacy Scala RNode):
+
+```lua
+require('rholang').setup({
+  lsp = {
+    validator_backend = 'grpc:localhost:40402',
+  },
+})
+```
+
+- **Use RNode in Docker**:
+
+```lua
+require('rholang').setup({
+  lsp = {
+    validator_backend = 'grpc:localhost:40402', -- or use Docker host IP
+  },
+})
+```
 
 - **Disable Tree-sitter** (use legacy syntax):
 
@@ -324,6 +451,7 @@ Run `:checkhealth rholang` to verify the plugin's setup. The health check ensure
 - Dependencies: Tree-sitter CLI, `nvim-treesitter` plugin, and appropriate compilers (`gcc`/`g++` for Linux, `clang` for macOS, or `cl.exe` for Windows)
 - Tree-sitter configuration: Parser installation, syntax highlighting, indentation, and folding
 - LSP configuration: Availability and running status of `rholang-language-server`
+- **Validator backend**: Reports which validator backend is configured (Rust or gRPC)
 - Filetype detection for `.rho` files
 
 A successful health check output looks like:
@@ -347,11 +475,21 @@ Checking Tree-sitter configuration
 - OK Tree-sitter syntax highlighting is functional
 
 Checking LSP configuration
+- INFO Validator backend: rust
 - OK rholang-language-server is installed and executable
 - OK rholang-language-server is running (client ID: 1)
 
 Checking filetype detection
 - OK Filetype detection for .rho files is working
+```
+
+When using RNode via gRPC, the LSP configuration section will show:
+
+```text
+Checking LSP configuration
+- INFO Validator backend: grpc:localhost:40402
+- OK rholang-language-server is installed and executable
+- OK rholang-language-server is running (client ID: 1)
 ```
 
 If issues are reported, refer to the [Troubleshooting](#troubleshooting) section for guidance on resolving them.
@@ -371,4 +509,20 @@ Submit issues or pull requests to the [rholang-nvim repository](https://github.c
 
 ## Version
 
-0.3.0 (June 10, 2025)
+**0.4.0** (October 31, 2025)
+
+### What's New in v0.4.0
+
+- **Standard LSP keybindings**: Migrated to standard Neovim LSP conventions (e.g., `K` for hover, `<leader>rn` for rename)
+- **Unified validator backend**: Simplified configuration with `validator_backend` option (replaces `use_rnode`, `grpc_host`, `grpc_port`)
+- **Enhanced LSP features**: Added keybindings for document symbols, workspace symbols, and signature help
+- **Complete tree-sitter migration**: Improved syntax highlighting, indentation, and code folding
+- **Performance improvements**: Compatible with rholang-language-server v0.1.0 (4-8x faster LSP operations)
+
+### Breaking Changes
+
+- Configuration: `use_rnode`, `grpc_host`, `grpc_port` replaced with `validator_backend`
+- Keybinding: Rename changed from `e` to `<leader>rn`
+- Removed custom `*`, `n`, `N` keybindings for reference navigation
+
+See [CHANGELOG.md](CHANGELOG.md) for full version history.

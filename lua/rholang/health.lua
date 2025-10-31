@@ -11,7 +11,12 @@ local function get_config()
   end
   health.warn('rholang-nvim configuration not found. Using default values.')
   return {
-    lsp = { enable = true, log_level = 'debug', language_server_path = 'rholang-language-server' },
+    lsp = {
+      enable = true,
+      log_level = 'debug',
+      language_server_path = 'rholang-language-server',
+      validator_backend = 'rust',
+    },
     treesitter = { enable = true, highlight = true, indent = true, fold = true },
   }
 end
@@ -109,6 +114,10 @@ local function check_lsp_server()
     health.info('LSP is disabled in rholang-nvim configuration.')
     return
   end
+
+  -- Report validator backend configuration
+  health.info('Validator backend: ' .. config.lsp.validator_backend)
+
   local lsp_path = config.lsp.language_server_path
   check_executable(lsp_path, 'rholang-language-server')
   local clients = vim.lsp.get_clients({ name = 'rholang' })
