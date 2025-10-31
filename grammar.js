@@ -1,22 +1,47 @@
+// Read environment variable to determine if comments should be named nodes
+// Set RHOLANG_NAMED_COMMENTS=1 to include comments as named nodes (for LSP features)
+// Unset or RHOLANG_NAMED_COMMENTS=0 for unnamed comments (smaller trees, less overhead)
+const namedComments = process.env.RHOLANG_NAMED_COMMENTS === '1';
+
 module.exports = grammar({
     name: 'rholang',
 
     extras: $ => [
-        $.line_comment,
-        $.block_comment,
+        namedComments ? $.line_comment : $._line_comment,
+        namedComments ? $.block_comment : $._block_comment,
         /\s/,
     ],
     word: $ => $.var,
 
     supertypes: $ => [
-        $._decls,
+        $._let_decls,
         $._bundle,
         $._send_type,
         $._source,
         $._proc_var,
-        $._ground],
+        $._literal],
 
-    inline: $ => [$.name, $.quotable],
+    inline: $ => [$.name],
+
+    reserved: {
+        global: $ => [
+            "new",
+            "if",
+            "else",
+            "let",
+            "match",
+            "select",
+            "contract",
+            "for",
+            "or",
+            "and",
+            "matches",
+            "not",
+            "bundle",
+            "true",
+            "false"
+        ],
+    },
 
     rules: {
         // Starting point of the grammar
@@ -37,171 +62,180 @@ module.exports = grammar({
             $._proc_expression
         ),
 
-        par: $ => prec.left(0, seq(field('left', $._proc), '|', field('right', $._proc))),
+        par: $ => prec.left(0, seq($._proc, '|', $._proc)),
 
         send_sync: $ => prec(1, seq(
-            field('name', $.name),
+            field('channel', $.name),
             '!?',
-            field('messages', alias($._proc_list, $.messages)),
-            field('cont', $.sync_send_cont))
+            field('inputs', alias($._proc_list, $.messages)), field('cont', $.sync_send_cont))
         ),
-        empty_cont: $ => '.',
-        non_empty_cont: $ => prec(1, seq(';', $._proc)),
-        sync_send_cont: $ => choice($.empty_cont, $.non_empty_cont),
 
         new: $ => prec(1, seq(
-            'new', field('decls', $.decls),
+            'new',
+            field('decls', $.name_decls),
             'in',
             field('proc', $._proc))),
-        decls: $ => commaSep1($.name_decl),
 
-        ifElse: $ => prec.right(1, seq('if', '(', field('condition', $._proc), ')',
-            field('ifTrue', $._proc),
-            field('alternative', optional(seq('else', $._proc)))
+        ifElse: $ => prec.right(1, seq(
+            'if', '(', field('condition', $._proc), ')',
+            field('consequence', $._proc),
+            optional(seq(
+                'else',
+                field('alternative', $._proc)))
         )),
 
-        let: $ => prec(2, seq('let', field('decls', $._decls), 'in', field('body', $.block))),
+        let: $ => prec(2, seq(
+            'let',
+            field('decls', $._let_decls),
+            'in',
+            field('proc', $._proc))),
 
-        bundle: $ => prec(2, seq(field('bundle_type', $._bundle), field('proc', $.block))),
+        bundle: $ => prec(2, seq(
+            field('bundle_type', $._bundle),
+            field('proc', $.block))),
 
         match: $ => prec(2, seq(
             'match',
             field('expression', $._proc_expression),
-            '{', field('cases', $.cases), '}'
+            '{',
+            field('cases',
+                alias(repeat1($.case), $.cases)),
+            '}'
         )),
-        cases: $ => repeat1($.case),
 
         choice: $ => prec(2, seq(
             'select',
-            '{', field('branches', alias(repeat1($.branch), $.branches)), '}'
+            '{',
+            field('branches',
+                alias(repeat1($.branch), $.branches)),
+            '}'
         )),
 
         contract: $ => prec(2, seq(
             'contract',
             field('name', $.name),
-            '(', field('formals', $.names), ')',
+            '(', optional(field('formals', $.names)), ')',
             '=',
             field('proc', $.block)
         )),
 
         input: $ => prec(2, seq(
-            'for',
-            '(', field('formals', $.receipts), ')',
+            'for', '(', field('receipts', $.receipts), ')',
             field('proc', $.block)
         )),
-        receipts: $ => semiSep1($._receipt),
 
         send: $ => prec(3, seq(
-            field('name', $.name),
+            field('channel', $.name),
             field('send_type', $._send_type),
             field('inputs', alias($._proc_list, $.inputs))
         )),
-        send_single: $ => '!',
-        send_multiple: $ => '!!',
-        _send_type: $ => choice($.send_single, $.send_multiple),
 
         _proc_expression: $ => choice(
-            $.or,
+            $._ground_expression,
+            $._parenthesized,
+            $.add,
             $.and,
-            $.matches,
+            $.concat,
+            $.conjunction,
+            $.diff,
+            $.disjunction,
+            $.div,
             $.eq,
-            $.neq,
-            $.lt,
-            $.lte,
+            $.eval,
             $.gt,
             $.gte,
-            $.add,
-            $.minus,
-            $.concat,
-            $.minus_minus,
-            $.percent_percent,
-            $.mult,
-            $.div,
-            $.mod,
-            $.not,
-            $.neg,
+            $.interpolation,
+            $.lt,
+            $.lte,
+            $.matches,
             $.method,
-            $._parenthesized,
-            $.eval,
-            $.quote,
-            $.disjunction,
-            $.conjunction,
+            $.mod,
+            $.mult,
+            $.neg,
             $.negation,
-            $._ground_expression,
+            $.neq,
+            $.not,
+            $.or,
+            $.sub,
             $.var_ref
         ),
+
+        // expressions in precedence order
+
+        or: $ => prec.left(4, seq($._proc, 'or', $._proc)),
+        and: $ => prec.left(5, seq($._proc, 'and', $._proc)),
+        matches: $ => prec.right(6, seq($._proc, 'matches', $._proc)),
+        eq: $ => prec.left(6, seq($._proc, '==', $._proc)),
+        neq: $ => prec.left(6, seq($._proc, '!=', $._proc)),
+        lt: $ => prec.left(7, seq($._proc, '<', $._proc)),
+        lte: $ => prec.left(7, seq($._proc, '<=', $._proc)),
+        gt: $ => prec.left(7, seq($._proc, '>', $._proc)),
+        gte: $ => prec.left(7, seq($._proc, '>=', $._proc)),
+        concat: $ => prec.left(8, seq($._proc, '++', $._proc)),
+        diff: $ => prec.left(8, seq($._proc, '--', $._proc)),
+        add: $ => prec.left(8, seq($._proc, '+', $._proc)),
+        sub: $ => prec.left(8, seq($._proc, '-', $._proc)),
+        interpolation: $ => prec.left(9, seq($._proc, '%%', $._proc)),
+        mult: $ => prec.left(9, seq($._proc, '*', $._proc)),
+        div: $ => prec.left(9, seq($._proc, '/', $._proc)),
+        mod: $ => prec.left(9, seq($._proc, '%', $._proc)),
+        not: $ => prec(10, seq('not', $._proc)),
+        neg: $ => prec(10, seq('-', $._proc)),
         _parenthesized: $ => prec(11, seq('(', $._proc_expression, ')')),
-
-        or: $ => prec.left(4, seq(field('left', $._proc), 'or', field('right', $._proc))),
-        and: $ => prec.left(5, seq(field('left', $._proc), 'and', field('right', $._proc))),
-        matches: $ => prec.right(6, seq(field('left', $._proc), 'matches', field('right', $._proc))),
-        eq: $ => prec.left(6, seq(field('left', $._proc), '==', field('right', $._proc))),
-        neq: $ => prec.left(6, seq(field('left', $._proc), '!=', field('right', $._proc))),
-        lt: $ => prec.left(7, seq(field('left', $._proc), '<', field('right', $._proc))),
-        lte: $ => prec.left(7, seq(field('left', $._proc), '<=', field('right', $._proc))),
-        gt: $ => prec.left(7, seq(field('left', $._proc), '>', field('right', $._proc))),
-        gte: $ => prec.left(7, seq(field('left', $._proc), '>=', field('right', $._proc))),
-        concat: $ => prec.left(8, seq(field('left', $._proc), '++', field('right', $._proc))),
-        minus_minus: $ => prec.left(8, seq(field('left', $._proc), '--', field('right', $._proc))),
-        minus: $ => prec.left(8, seq(field('left', $._proc), '-', field('right', $._proc))),
-        add: $ => prec.left(8, seq(field('left', $._proc), '+', field('right', $._proc))),
-        percent_percent: $ => prec.left(9, seq(field('left', $._proc), '%%', field('right', $._proc))),
-        mult: $ => prec.left(9, seq(field('left', $._proc), '*', field('right', $._proc))),
-        div: $ => prec.left(9, seq(field('left', $._proc), '/', field('right', $._proc))),
-        mod: $ => prec.left(9, seq(field('left', $._proc), '%', field('right', $._proc))),
-        not: $ => prec(10, seq('not', field('proc', $._proc))),
-        neg: $ => prec(10, seq('-', field('proc', $._proc))),
-
         method: $ => prec(11, seq(
             field('receiver', $._proc),
             '.',
             field('name', $.var),
             field('args', alias($._proc_list, $.args)))
         ),
-
         eval: $ => prec(12, seq('*', $.name)),
-
-        disjunction: $ => prec.left(13, seq(field('left', $._proc), '\\/', field('right', $._proc))),
-        conjunction: $ => prec.left(14, seq(field('left', $._proc), '/\\', field('right', $._proc))),
-        negation: $ => prec(15, seq('~', field('proc', $._proc))),
-
-        _ground_expression: $ => prec(16, choice($.block, $._ground, $.collection, $._proc_var, $.simple_type)),
-        block: $ => seq('{', field('body', $._proc), '}'),
-
-        // process variables and names
-        wildcard: $ => '_',
-        _proc_var: $ => choice($.wildcard, $.var),
-
-        var_ref_kind: $ => choice('=', '=*'),
         var_ref: $ => prec(13, seq(field('kind', $.var_ref_kind), field('var', $.var))),
+        var_ref_kind: $ => choice('=', '=*'),
+        disjunction: $ => prec.left(13, seq($._proc, '\\/', $._proc)),
+        conjunction: $ => prec.left(14, seq($._proc, '/\\', $._proc)),
+        negation: $ => prec(15, seq('~', $._proc)),
+        _ground_expression: $ => prec(16, choice($.block, $._literal, $.nil, $.collection, $._proc_var, $.simple_type, $.unit)),
 
-        quotable: $ => choice(
-            $.var_ref,
-            $.eval,
-            $.disjunction,
-            $.conjunction,
-            $.negation,
-            $._ground_expression),
-        quote: $ => prec(12, seq('@', $.quotable)),
+        // synchronous send continuations
+        sync_send_cont: $ => choice($.empty_cont, $.non_empty_cont),
 
-        name: $ => choice($._proc_var, $.quote),
-        _name_remainder: $ => seq('...', '@', $._proc_var),
-        names: $ => seq(commaSep1($.name), field('cont', optional($._name_remainder))),
+        non_empty_cont: $ => prec(1, seq(';', $._proc)),
+        empty_cont: $ => '.',
+
+        // new name declaration
+        name_decls: $ => commaSep1($.name_decl),
+        name_decl: $ => seq($.var, optional(seq('(', field('uri', $.uri_literal), ')'))),
 
         // let declarations
-        decl: $ => seq(field('names', $.names), '=', field('procs', alias(commaSep1($._proc), $.procs))),
+        _let_decls: $ => choice(
+            $.linear_decls,
+            $.conc_decls),
+
         linear_decls: $ => semiSep1($.decl),
         conc_decls: $ => prec(-1, conc1($.decl)),
-        _decls: $ => choice($.linear_decls, $.conc_decls),
+        decl: $ => seq(field('names', $.names), '=', field('procs', alias(commaSep1($._proc), $.procs))),
 
-        // bundle
-        bundle_write: $ => 'bundle+',
+        // bundles
+        _bundle: $ => choice(
+            $.bundle_read,
+            $.bundle_write,
+            $.bundle_equiv,
+            $.bundle_read_write),
         bundle_read: $ => 'bundle-',
+        bundle_write: $ => 'bundle+',
         bundle_equiv: $ => 'bundle0',
         bundle_read_write: $ => 'bundle',
-        _bundle: $ => choice($.bundle_write, $.bundle_read, $.bundle_equiv, $.bundle_read_write),
 
-        // receipts
+        // case in match expression
+        case: $ => seq(field('pattern', $._proc), '=>', field('proc', $._proc)),
+
+        // branch in select expression
+        branch: $ => seq(field('pattern', conc1($.linear_bind)), '=>', field('proc', choice($.send, $._proc_expression))),
+
+        // for comprehensions
+        receipts: $ => semiSep1($.receipt),
+        receipt: $ => conc1(choice($.linear_bind, $.repeated_bind, $.peek_bind)),
+
         linear_bind: $ => seq(
             optional(field('names', $.names)),
             '<-',
@@ -209,91 +243,96 @@ module.exports = grammar({
         ),
 
         repeated_bind: $ => seq(
-            field('names', $.names),
+            optional(field('names', $.names)),
             '<=',
             field('input', $.name)
         ),
 
-
         peek_bind: $ => seq(
-            field('names', $.names),
+            optional(field('names', $.names)),
             '<<-',
             field('input', $.name)
         ),
 
-        _receipt: $ => choice(
-            conc1($.linear_bind),
-            conc1($.repeated_bind),
-            conc1($.peek_bind)),
+        // source definitions
+        _source: $ => choice(
+            $.simple_source,
+            $.receive_send_source,
+            $.send_receive_source),
 
         simple_source: $ => $.name,
         receive_send_source: $ => seq($.name, '?!'),
         send_receive_source: $ => seq($.name, '!?', field('inputs', alias($._proc_list, $.inputs))),
-        _source: $ => choice($.simple_source, $.receive_send_source, $.send_receive_source),
 
-        // select branches
-        branch: $ => seq(field('pattern', conc1($.linear_bind)), '=>', field('proc', choice($.send, $._proc_expression))),
+        // sends
+        _send_type: $ => choice($.send_single, $.send_multiple),
+        send_single: $ => '!',
+        send_multiple: $ => '!!',
 
-        // name declarations
-        name_decl: $ => seq($.var, field('uri', optional(seq('(', $.uri_literal, ')')))),
+        // ground terms and expressions
 
-        //match cases
-        case: $ => seq(field('pattern', $._proc), '=>', field('proc', $._proc)),
+        block: $ => seq('{', $._proc, '}'),
 
-        // ground terms
-        nil: $ => 'Nil',
-        _ground: $ => choice($.bool_literal, $.long_literal, $.string_literal, $.uri_literal, $.nil),
-
-        // Literals
-        bool_literal: $ => choice('true', 'false'),
-        long_literal: $ => token(/\d+/),
-        string_literal: $ => token(/"[^"\\]*(\\.[^"\\]*)*"/),
-        uri_literal: $ => token(/`([^\\`]|\\.)*`/),
-
-        // Simple types
         simple_type: $ => choice('Bool', 'Int', 'String', 'Uri', 'ByteArray'),
 
+        _literal: $ => choice(
+            $.bool_literal,
+            $.long_literal,
+            $.string_literal,
+            $.uri_literal),
+        bool_literal: $ => choice('true', 'false'),
+        long_literal: $ => token(/-?\d+/),
+        string_literal: $ => token(/"([^"\\]|(\\[0nrt\\"])|(\\[0-9]+))*"/),
+        uri_literal: $ => token(/`[^`]+`/),
+
+        unit: $ => seq('(', ')'),
+
+        nil: $ => 'Nil',
+
         // Collections
-        collection: $ => choice($.list, $.tuple, $.set, $.map),
+        collection: $ => choice($.list, $.tuple, $.set, $.map, $.pathmap),
 
-        list: $ => seq(
-            '[',
-            commaSep($._proc),
-            field('cont', optional($._proc_remainder)),
-            ']'
-        ),
+        list: $ => seq('[', commaSep($._proc), optional($._proc_remainder), ']'),
 
-        set: $ => seq(
-            'Set', '(',
-            commaSep($._proc),
-            field('cont', optional($._proc_remainder)),
-            ')'
-        ),
+        set: $ => seq('Set', '(', commaSep($._proc), optional($._proc_remainder), ')'),
 
-        map: $ => seq(
-            '{',
-            commaSep($.key_value_pair),
-            field('cont', optional($._proc_remainder)),
-            '}'
-        ),
+        map: $ => seq('{', commaSep($.key_value_pair), optional($._proc_remainder), '}'),
+        key_value_pair: $ => seq(field('key', $._proc), ':', field('value', $._proc)),
 
-        _proc_remainder: $ => seq('...', $._proc_var),
-
-        key_value_pair: $ => seq(
-            field('key', $._proc),
-            ':',
-            field('value', $._proc)
-        ),
+        pathmap: $ => seq('{|', commaSep($._proc), optional($._proc_remainder), '|}'),
 
         tuple: $ => choice(
             seq('(', $._proc, ',)'),
             seq('(', commaSep1($._proc), ')')
         ),
 
+        _proc_remainder: $ => seq('...', field('remainder', $._proc_var)),
+
+        // process lists
         _proc_list: $ => seq('(', commaSep($._proc), ')'),
-        var: $ => token(/(([a-zA-Z]|')([a-zA-Z0-9_']*)|(_[a-zA-Z0-9_']+))/),
+
+        // process variables and names
+        name: $ => choice($._proc_var, $.quote),
+        _proc_var: $ => choice($.wildcard, $.var),
+        quote: $ => prec(12, seq('@', $._proc)),
+        wildcard: $ => '_',
+        var: $ => token(/[a-zA-Z]([a-zA-Z0-9_'])*|_([a-zA-Z0-9_'])+/),
+
+        names: $ => choice(seq(commaSep1($.name), optional($._name_remainder)), $._name_remainder),
+        _name_remainder: $ => seq('...', '@', field('cont', $._proc_var)),
+
+        // comments
+        // Define both named and unnamed versions to support conditional compilation
+
         line_comment: $ => token(seq('//', /[^\n]*/)),
+        _line_comment: $ => token(seq('//', /[^\n]*/)),
+
         block_comment: $ => token(seq(
+            '/*',
+            /[^*]*\*+([^/*][^*]*\*+)*/,
+            '/',
+        )),
+        _block_comment: $ => token(seq(
             '/*',
             /[^*]*\*+([^/*][^*]*\*+)*/,
             '/',
@@ -302,26 +341,26 @@ module.exports = grammar({
     }
 });
 
-function commaSep1(rule) {
-    return seq(rule, repeat(seq(',', rule)), optional(','))
-}
-
 function commaSep(rule) {
     return optional(commaSep1(rule))
 }
 
-function semiSep1(rule) {
-    return seq(rule, repeat(seq(';', rule)))
+function commaSep1(rule) {
+    return seq(rule, repeat(seq(',', rule)), optional(','))
 }
 
 function semiSep(rule) {
     return optional(semiSep1(rule))
 }
 
-function conc1(rule) {
-    return seq(rule, repeat(seq('&', rule)))
+function semiSep1(rule) {
+    return seq(rule, repeat(seq(';', rule)))
 }
 
 function conc(rule) {
     return optional(conc1(rule))
+}
+
+function conc1(rule) {
+    return seq(rule, repeat(seq('&', rule)))
 }

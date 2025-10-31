@@ -7,7 +7,9 @@ local default_config = {
     enable = true,
     log_level = 'debug', -- Options: error, warn, info, debug, trace
     language_server_path = 'rholang-language-server', -- Path to the language server executable
-    validator_backend = 'rust', -- Validator backend: 'rust' (default, embedded parser/interpreter) or 'grpc:host:port' (e.g., 'grpc:localhost:40402' for RNode)
+    use_rnode = false, -- Set to true to enable RNode gRPC validation (requires grpc_host and grpc_port)
+    grpc_host = 'localhost', -- RNode gRPC host (used when use_rnode = true)
+    grpc_port = 40402, -- RNode gRPC port (used when use_rnode = true)
     semantic_tokens = true, -- Enable LSP semantic highlighting (more accurate than tree-sitter alone)
   },
   treesitter = {
@@ -375,17 +377,16 @@ function M.setup(user_config)
           '--client-process-id', tostring(vim.fn.getpid()),
         }
 
-        -- Add validator backend configuration
-        table.insert(lsp_cmd, '--validator-backend')
-        table.insert(lsp_cmd, config.lsp.validator_backend)
-
-        -- Show informative message
-        if config.lsp.validator_backend == 'rust' then
-          vim.notify('Rholang LSP: Using embedded Rust parser/interpreter', vim.log.levels.INFO)
-        elseif config.lsp.validator_backend:match('^grpc:') then
-          vim.notify('Rholang LSP: Using RNode via ' .. config.lsp.validator_backend, vim.log.levels.INFO)
+        -- Add RNode configuration
+        if config.lsp.use_rnode then
+          -- When using RNode, pass validator-backend with gRPC address
+          table.insert(lsp_cmd, '--validator-backend')
+          table.insert(lsp_cmd, 'grpc:' .. config.lsp.grpc_host .. ':' .. config.lsp.grpc_port)
+          vim.notify('Rholang LSP: Using RNode via gRPC at ' .. config.lsp.grpc_host .. ':' .. config.lsp.grpc_port, vim.log.levels.INFO)
         else
-          vim.notify('Rholang LSP: Using validator backend: ' .. config.lsp.validator_backend, vim.log.levels.INFO)
+          -- When not using RNode, pass --no-rnode to use embedded Rust validator
+          table.insert(lsp_cmd, '--no-rnode')
+          vim.notify('Rholang LSP: Using embedded Rust validator', vim.log.levels.INFO)
         end
         local client_id = vim.lsp.start({
           name = 'rholang',

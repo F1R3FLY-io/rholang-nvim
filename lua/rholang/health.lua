@@ -15,7 +15,9 @@ local function get_config()
       enable = true,
       log_level = 'debug',
       language_server_path = 'rholang-language-server',
-      validator_backend = 'rust',
+      use_rnode = false,
+      grpc_host = 'localhost',
+      grpc_port = 40402,
       semantic_tokens = true,
     },
     treesitter = { enable = true, highlight = true, indent = true, fold = true },
@@ -116,8 +118,12 @@ local function check_lsp_server()
     return
   end
 
-  -- Report validator backend configuration
-  health.info('Validator backend: ' .. config.lsp.validator_backend)
+  -- Report RNode mode
+  if config.lsp.use_rnode then
+    health.info('LSP mode: Using RNode via gRPC at ' .. config.lsp.grpc_host .. ':' .. config.lsp.grpc_port)
+  else
+    health.info('LSP mode: Using embedded Rust validator (--no-rnode)')
+  end
 
   -- Report semantic tokens configuration
   if config.lsp.semantic_tokens then

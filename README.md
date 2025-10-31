@@ -325,7 +325,9 @@ Configure the plugin via `require('rholang').setup(config)`. Default settings:
     enable = true,
     log_level = 'debug', -- Options: error, warn, info, debug, trace
     language_server_path = 'rholang-language-server',
-    validator_backend = 'rust', -- Validator backend: 'rust' or 'grpc:host:port'
+    use_rnode = false, -- Set to true to enable RNode gRPC validation
+    grpc_host = 'localhost', -- RNode gRPC host (used when use_rnode = true)
+    grpc_port = 40402, -- RNode gRPC port (used when use_rnode = true)
     semantic_tokens = true, -- Enable LSP semantic highlighting (default: true)
   },
   treesitter = {
@@ -337,23 +339,25 @@ Configure the plugin via `require('rholang').setup(config)`. Default settings:
 }
 ```
 
-### Validator Backend
+### RNode Integration
 
-The language server supports multiple validator backends for obtaining diagnostics:
+The language server supports two modes for obtaining diagnostics:
 
-1. **Embedded Rust Parser/Interpreter** (default, `validator_backend = 'rust'`):
+1. **Embedded Rust Validator** (default, `use_rnode = false`):
    - Uses the embedded Rust implementation directly linked into the language server
    - Faster startup, no external dependencies
    - Suitable for most development workflows
+   - Passes `--no-rnode` flag to the language server
 
-2. **Legacy RNode via gRPC** (`validator_backend = 'grpc:host:port'`):
+2. **Legacy RNode via gRPC** (`use_rnode = true`):
    - Communicates with legacy Scala RNode server via gRPC
    - Stable, production-ready implementation
    - Required for customers using legacy RNode
    - Can run RNode in Docker or locally
-   - Example: `'grpc:localhost:40402'`
+   - Requires `grpc_host` and `grpc_port` configuration
+   - Passes `--validator-backend grpc:host:port` flag to the language server
 
-**Note**: The `validator_backend` option is passed directly to the language server via the `--validator-backend` flag.
+**Note**: When `use_rnode = false`, the language server receives the `--no-rnode` flag. When `use_rnode = true`, the language server receives `--validator-backend grpc:host:port` flag.
 
 ### LSP Semantic Highlighting
 
@@ -379,30 +383,6 @@ require('rholang').setup({
 
 **Note**: Semantic highlighting works alongside tree-sitter highlighting. Tree-sitter provides fast, initial highlighting while semantic tokens add semantic accuracy once the language server has analyzed the file.
 
-### Migration from v0.3.0
-
-If you're upgrading from v0.3.0, the configuration has changed:
-
-**Old configuration (v0.3.0):**
-```lua
-{
-  lsp = {
-    use_rnode = true,
-    grpc_host = 'localhost',
-    grpc_port = 40402,
-  },
-}
-```
-
-**New configuration (v0.4.0):**
-```lua
-{
-  lsp = {
-    validator_backend = 'grpc:localhost:40402',
-  },
-}
-```
-
 ### Configuration Examples
 
 - **Use RNode for diagnostics** (legacy Scala RNode):
@@ -410,7 +390,9 @@ If you're upgrading from v0.3.0, the configuration has changed:
 ```lua
 require('rholang').setup({
   lsp = {
-    validator_backend = 'grpc:localhost:40402',
+    use_rnode = true,
+    grpc_host = 'localhost',
+    grpc_port = 40402,
   },
 })
 ```
@@ -420,7 +402,9 @@ require('rholang').setup({
 ```lua
 require('rholang').setup({
   lsp = {
-    validator_backend = 'grpc:localhost:40402', -- or use Docker host IP
+    use_rnode = true,
+    grpc_host = 'localhost', -- or Docker host IP
+    grpc_port = 40402, -- exposed Docker port
   },
 })
 ```
@@ -513,7 +497,7 @@ Checking Tree-sitter configuration
 - OK Tree-sitter syntax highlighting is functional
 
 Checking LSP configuration
-- INFO Validator backend: rust
+- INFO LSP mode: Using embedded Rust validator (--no-rnode)
 - INFO LSP semantic tokens: enabled
 - OK rholang-language-server is installed and executable
 - OK rholang-language-server is running (client ID: 1)
@@ -526,7 +510,7 @@ When using RNode via gRPC, the LSP configuration section will show:
 
 ```text
 Checking LSP configuration
-- INFO Validator backend: grpc:localhost:40402
+- INFO LSP mode: Using RNode via gRPC at localhost:40402
 - INFO LSP semantic tokens: enabled
 - OK rholang-language-server is installed and executable
 - OK rholang-language-server is running (client ID: 1)
